@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field
 
 class UserCreate(BaseModel):
     username: str
+    email: str
+    password: str = Field(min_length=8)
+    full_name: str | None = None
+    phone: str | None = None
     role: str
 
 
@@ -46,6 +50,7 @@ class GoalIn(BaseModel):
 
 
 class MethodStepIn(BaseModel):
+    week_num: int = Field(ge=1, le=4)
     order_num: int
     reps: int = 1
     duration_sec: int
@@ -61,6 +66,14 @@ class MethodIn(BaseModel):
     steps: list[MethodStepIn]
 
 
+class DayPlanIn(BaseModel):
+    day_name: str
+    day_goal: str
+    planned_hours: float = Field(gt=0)
+    goal_ids: list[int] = []
+    selected_method_ids: list[int] = []
+
+
 class PlanIn(BaseModel):
     athlete_id: int
     start_date: dt.date
@@ -69,4 +82,4 @@ class PlanIn(BaseModel):
     available_days: list[str]
     race_model: str
     main_goals: list[str]
-    preferred_method_ids: list[int] = []
+    day_templates: list[DayPlanIn] = []
