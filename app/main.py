@@ -23,7 +23,7 @@ from .models import (
     ZoneRange,
 )
 from .schemas import AthleteCreate, GoalIn, MethodIn, PlanIn, SnapshotIn, UserCreate
-from .services import compute_stress, hash_password, week_type
+from .services import compute_stress, hash_password, verify_password, week_type
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Il Tuo Allenatore API")
@@ -39,6 +39,25 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+
+
+def ensure_default_admin(db: Session):
+    admin = db.scalar(select(User).where(User.username == "admin"))
+    if admin:
+        return
+    db.add(
+        User(
+            username="admin",
+            email="admin@iltuoallenatore.local",
+            password_hash=hash_password("admin"),
+            full_name="Admin",
+            role=Role.coach,
+            is_active=True,
+        )
+    )
+    db.commit()
 
 
 def format_user(u: User):
@@ -63,6 +82,7 @@ def index():
 
 @app.get("/api/status")
 def root(db: Session = Depends(get_db)):
+    ensure_default_admin(db)
     db_ok = True
     try:
         db.execute(text("SELECT 1"))
@@ -70,6 +90,35 @@ def root(db: Session = Depends(get_db)):
         db_ok = False
     return {"message": "Il Tuo Allenatore API online", "docs": "/docs", "db_connected": db_ok}
 
+
+
+
+@app.post("/auth/login")
+def login(payload: dict, db: Session = Depends(get_db)):
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username e password obbligatori")
+
+    ensure_default_admin(db)
+    user = db.scalar(select(User).where(User.username == username))
+    if not user or not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=401, detail="credenziali non valide")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="utente disattivato")
+
+    return {"user": format_user(user)}
+
+
+@app.post("/auth/recover-password")
+def recover_password(payload: dict, db: Session = Depends(get_db)):
+    username = (payload.get("username") or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username obbligatorio")
+    user = db.scalar(select(User).where(User.username == username))
+    if not user:
+        return {"message": "Se l'utente esiste riceverà istruzioni di recupero password."}
+    return {"message": f"Recupero password richiesto per {user.username}. Contatta l'amministratore."}
 
 @app.get("/users")
 def list_users(db: Session = Depends(get_db)):

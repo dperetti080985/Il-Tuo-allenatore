@@ -35,3 +35,14 @@ def test_index_serves_web_app():
     response = client.get("/")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
+
+
+def test_login_with_default_admin():
+    response = client.post("/auth/login", json={"username": "admin", "password": "admin"})
+    assert response.status_code == 200
+    assert response.json()["user"]["role"] == "coach"
+
+
+def test_recover_password_requires_username():
+    response = client.post("/auth/recover-password", json={"username": ""})
+    assert response.status_code == 400
