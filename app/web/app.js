@@ -21,10 +21,22 @@ function App() {
     const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
     const contentType = res.headers.get("content-type") || "";
     const isJson = contentType.includes("application/json");
-    const body = res.status === 204 ? null : (isJson ? await res.json() : await res.text());
+    let body = null;
+
+    if (res.status !== 204) {
+      if (isJson) {
+        try {
+          body = await res.json();
+        } catch {
+          body = await res.text();
+        }
+      } else {
+        body = await res.text();
+      }
+    }
 
     if (!res.ok) {
-      const detail = isJson ? (body?.detail || body?.message) : body;
+      const detail = isJson && typeof body === "object" ? (body?.detail || body?.message) : body;
       throw new Error(detail || `Errore API (${res.status})`);
     }
     return body;
