@@ -1,5 +1,5 @@
 from app.models import TrainingMethodStep
-from app.services import compute_stress, hash_password, week_type
+from app.services import compute_stress, hash_password, verify_password, week_type
 
 
 def test_compute_stress():
@@ -18,3 +18,9 @@ def test_week_type_pattern():
 
 def test_hash_password_is_deterministic():
     assert hash_password("Password123") == hash_password("Password123")
+
+
+def test_verify_password_matches_hash():
+    digest = hash_password("admin")
+    assert verify_password("admin", digest)
+    assert not verify_password("wrong", digest)
