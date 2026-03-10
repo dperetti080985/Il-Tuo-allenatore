@@ -1,25 +1,67 @@
-# Il-Tuo-allenatore
+# Il Tuo Allenatore - MVP
 
-Portale per atleti e allenatori con API FastAPI per gestire:
+Piattaforma web MVP per coach sportivi e atleti costruita con:
 
-- accesso utenti con ruolo `coach` o `athlete`
-- anagrafica atleta
-- snapshot prestativi con zone 1-7 (watt + frequenza cardiaca)
-- storicizzazione automatica dei dati (nuovo inserimento precompila dai dati precedenti)
-- metodi di allenamento con finalità multiple, sequenza ripetute e stress score automatico
-- costruzione piani di allenamento con pattern 3 settimane carico + 1 scarico
+- Next.js (App Router)
+- TypeScript
+- Tailwind CSS
+- SQLite
+- Prisma ORM
+- Autenticazione custom con ruoli (`COACH`, `ATHLETE`)
 
-## Avvio rapido
+## Struttura progetto
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
-uvicorn app.main:app --reload
+```txt
+src/
+  app/
+    (auth)/login
+    coach/{dashboard,athletes,workouts,summary}
+    athlete/{calendar,workouts/[id]}
+    api/
+      auth/{login,me}
+      coach/{athletes,workouts,assignments,summary}
+      athlete/{calendar,feedback}
+  components/
+    layout/
+    ui/
+  lib/
+prisma/
+  schema.prisma
+  seed.ts
 ```
 
-## Test
+## Setup
 
 ```bash
-pytest
+npm install
+cp .env.example .env
+npx prisma generate
+npx prisma migrate dev --name init-sqlite
+npm run prisma:seed
+npm run dev
 ```
+
+
+## Note SQLite + Prisma
+
+Con SQLite, Prisma non supporta `enum` nativi nel file schema. In questo progetto i campi sono modellati come stringhe:
+- `User.role`: `COACH` | `ATHLETE`
+- `Workout.status`: `DRAFT` | `PUBLISHED`
+
+## Credenziali seed
+
+- Coach: `coach@demo.it` / `coach123`
+- Atleta: `anna@demo.it` / `athlete123`
+- Atleta: `luca@demo.it` / `athlete123`
+
+## MVP coperto
+
+1. Login
+2. Dashboard coach
+3. Creazione atleta
+4. Creazione allenamento
+5. Assegnazione allenamento multipla (API)
+6. Calendario settimanale atleta (API + pagina)
+7. Dettaglio allenamento con blocchi
+8. Feedback atleta post allenamento
+9. Dashboard riepilogo coach (API + pagina)
