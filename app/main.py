@@ -85,6 +85,32 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     return {"id": user.id, "username": user.username, "role": user.role.value}
 
 
+@app.put("/users/{user_id}")
+def update_user(user_id: int, payload: UserCreate, db: Session = Depends(get_db)):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="user non trovato")
+
+    existing = db.scalar(select(User).where(User.username == payload.username, User.id != user_id))
+    if existing:
+        raise HTTPException(status_code=400, detail="username già esistente")
+
+    user.username = payload.username
+    user.role = Role(payload.role)
+    db.commit()
+    return {"id": user.id, "username": user.username, "role": user.role.value}
+
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="user non trovato")
+    db.delete(user)
+    db.commit()
+    return {"deleted": True}
+
+
 @app.get("/athletes")
 def list_athletes(db: Session = Depends(get_db)):
     athletes = db.scalars(select(AthleteProfile).options(joinedload(AthleteProfile.user)).order_by(AthleteProfile.id.asc())).all()
@@ -112,6 +138,31 @@ def create_athlete(payload: AthleteCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(athlete)
     return {"athlete_id": athlete.id}
+
+
+@app.put("/athletes/{athlete_id}")
+def update_athlete(athlete_id: int, payload: AthleteCreate, db: Session = Depends(get_db)):
+    athlete = db.get(AthleteProfile, athlete_id)
+    if not athlete:
+        raise HTTPException(status_code=404, detail="atleta non trovato")
+    user = db.get(User, payload.user_id)
+    if not user or user.role != Role.athlete:
+        raise HTTPException(status_code=400, detail="user atleta non valido")
+
+    for key, value in payload.model_dump().items():
+        setattr(athlete, key, value)
+    db.commit()
+    return {"athlete_id": athlete.id}
+
+
+@app.delete("/athletes/{athlete_id}")
+def delete_athlete(athlete_id: int, db: Session = Depends(get_db)):
+    athlete = db.get(AthleteProfile, athlete_id)
+    if not athlete:
+        raise HTTPException(status_code=404, detail="atleta non trovato")
+    db.delete(athlete)
+    db.commit()
+    return {"deleted": True}
 
 
 SNAPSHOT_FIELDS = [
@@ -174,6 +225,42 @@ def add_snapshot(athlete_id: int, payload: SnapshotIn, db: Session = Depends(get
     return {"snapshot_id": snapshot.id}
 
 
+@app.get("/athletes/{athlete_id}/snapshots")
+def list_snapshots(athlete_id: int, db: Session = Depends(get_db)):
+    snapshots = db.scalars(
+        select(AthleteSnapshot).options(joinedload(AthleteSnapshot.zones)).where(AthleteSnapshot.athlete_id == athlete_id).order_by(AthleteSnapshot.ref_date.desc())
+    ).unique().all()
+    return [
+        {
+            "id": s.id,
+            "athlete_id": s.athlete_id,
+            "ref_date": s.ref_date,
+            **{field: getattr(s, field) for field in SNAPSHOT_FIELDS},
+            "zones": [
+                {
+                    "zone": z.zone,
+                    "watt_min": z.watt_min,
+                    "watt_max": z.watt_max,
+                    "hr_min": z.hr_min,
+                    "hr_max": z.hr_max,
+                }
+                for z in sorted(s.zones, key=lambda item: item.zone)
+            ],
+        }
+        for s in snapshots
+    ]
+
+
+@app.delete("/snapshots/{snapshot_id}")
+def delete_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
+    snapshot = db.get(AthleteSnapshot, snapshot_id)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="snapshot non trovato")
+    db.delete(snapshot)
+    db.commit()
+    return {"deleted": True}
+
+
 @app.get("/athletes/{athlete_id}/progress/{field_name}")
 def get_progress(athlete_id: int, field_name: str, db: Session = Depends(get_db)):
     if field_name not in SNAPSHOT_FIELDS:
@@ -201,6 +288,27 @@ def create_goal(payload: GoalIn, db: Session = Depends(get_db)):
     return {"goal_id": goal.id}
 
 
+@app.put("/goals/{goal_id}")
+def update_goal(goal_id: int, payload: GoalIn, db: Session = Depends(get_db)):
+    goal = db.get(TrainingGoal, goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="goal non trovato")
+    goal.name = payload.name
+    goal.description = payload.description
+    db.commit()
+    return {"goal_id": goal.id}
+
+
+@app.delete("/goals/{goal_id}")
+def delete_goal(goal_id: int, db: Session = Depends(get_db)):
+    goal = db.get(TrainingGoal, goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="goal non trovato")
+    db.delete(goal)
+    db.commit()
+    return {"deleted": True}
+
+
 @app.get("/methods")
 def list_methods(db: Session = Depends(get_db)):
     methods = db.scalars(
@@ -217,6 +325,7 @@ def list_methods(db: Session = Depends(get_db)):
             "goal_ids": [g.id for g in m.goals],
             "steps": [
                 {
+                    "id": s.id,
                     "order_num": s.order_num,
                     "reps": s.reps,
                     "duration_sec": s.duration_sec,
@@ -249,6 +358,40 @@ def create_method(payload: MethodIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(method)
     return {"method_id": method.id, "stress_score": method.stress_score}
+
+
+@app.put("/methods/{method_id}")
+def update_method(method_id: int, payload: MethodIn, db: Session = Depends(get_db)):
+    method = db.scalar(select(TrainingMethod).options(joinedload(TrainingMethod.steps)).where(TrainingMethod.id == method_id))
+    if not method:
+        raise HTTPException(status_code=404, detail="metodo non trovato")
+    goals = db.scalars(select(TrainingGoal).where(TrainingGoal.id.in_(payload.goal_ids))).all() if payload.goal_ids else []
+
+    method.name = payload.name
+    method.description = payload.description
+    method.goals = goals
+    for step in list(method.steps):
+        db.delete(step)
+    db.flush()
+
+    steps = []
+    for step in payload.steps:
+        record = TrainingMethodStep(method_id=method.id, **step.model_dump())
+        db.add(record)
+        steps.append(record)
+    method.stress_score = compute_stress(steps)
+    db.commit()
+    return {"method_id": method.id, "stress_score": method.stress_score}
+
+
+@app.delete("/methods/{method_id}")
+def delete_method(method_id: int, db: Session = Depends(get_db)):
+    method = db.get(TrainingMethod, method_id)
+    if not method:
+        raise HTTPException(status_code=404, detail="metodo non trovato")
+    db.delete(method)
+    db.commit()
+    return {"deleted": True}
 
 
 @app.get("/plans")
@@ -308,3 +451,13 @@ def create_plan(payload: PlanIn, db: Session = Depends(get_db)):
 
     db.commit()
     return {"plan_id": plan.id, "weeks": weeks}
+
+
+@app.delete("/plans/{plan_id}")
+def delete_plan(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.get(TrainingPlan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="piano non trovato")
+    db.delete(plan)
+    db.commit()
+    return {"deleted": True}
