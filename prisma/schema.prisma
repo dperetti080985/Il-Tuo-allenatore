@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  COACH
+  ATHLETE
+}
+
+enum WorkoutStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  role           UserRole
+  coachProfile   CoachProfile?
+  athleteProfile AthleteProfile?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model CoachProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  athletes  AthleteProfile[]
+  workouts  Workout[]
+  createdAt DateTime @default(now())
+}
+
+model AthleteProfile {
+  id              String              @id @default(cuid())
+  userId          String              @unique
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coachId         String
+  coach           CoachProfile        @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  assignments     WorkoutAssignment[]
+  feedbackEntries WorkoutFeedback[]
+  createdAt       DateTime            @default(now())
+}
+
+model Workout {
+  id          String              @id @default(cuid())
+  coachId     String
+  coach       CoachProfile        @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      WorkoutStatus       @default(DRAFT)
+  blocks      WorkoutBlock[]
+  assignments WorkoutAssignment[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model WorkoutBlock {
+  id          String   @id @default(cuid())
+  workoutId   String
+  workout     Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  title       String
+  instructions String
+  order       Int
+  durationMin Int?
+}
+
+model WorkoutAssignment {
+  id          String          @id @default(cuid())
+  workoutId   String
+  workout     Workout         @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  athleteId   String
+  athlete     AthleteProfile  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  scheduledAt DateTime
+  completedAt DateTime?
+  feedback    WorkoutFeedback?
+
+  @@unique([workoutId, athleteId, scheduledAt])
+}
+
+model WorkoutFeedback {
+  id            String            @id @default(cuid())
+  assignmentId  String            @unique
+  assignment    WorkoutAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  athleteId     String
+  athlete       AthleteProfile    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  rating        Int
+  notes         String?
+  perceivedLoad Int?
+  createdAt     DateTime          @default(now())
+}
