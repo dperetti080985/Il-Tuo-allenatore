@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -27,6 +27,34 @@ from .schemas import AthleteCreate, GoalIn, MethodIn, PlanIn, SnapshotIn, UserCr
 from .services import compute_stress, hash_password, verify_password, week_type
 
 Base.metadata.create_all(bind=engine)
+
+def migrate_legacy_schema():
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    if "users" not in tables:
+        return
+
+    user_columns = {col["name"] for col in inspector.get_columns("users")}
+    with engine.begin() as conn:
+        if "email" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR(160)"))
+        if "full_name" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN full_name VARCHAR(120)"))
+        if "phone" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(30)"))
+        if "is_active" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN"))
+            conn.execute(text("UPDATE users SET is_active = 1 WHERE is_active IS NULL"))
+        if "created_at" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
+            conn.execute(text("UPDATE users SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+
+        conn.execute(text("UPDATE users SET email = username || '@legacy.local' WHERE email IS NULL OR email = ''"))
+        conn.execute(text("UPDATE users SET is_active = 1 WHERE is_active IS NULL"))
+        conn.execute(text("UPDATE users SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+
+
+migrate_legacy_schema()
 app = FastAPI(title="Il Tuo Allenatore API")
 
 WEB_DIR = Path(__file__).parent / "web"
