@@ -23,7 +23,7 @@ from .models import (
     ZoneRange,
 )
 from .schemas import AthleteCreate, GoalIn, MethodIn, PlanIn, SnapshotIn, UserCreate
-from .services import compute_stress, week_type
+from .services import compute_stress, hash_password, week_type
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Il Tuo Allenatore API")
@@ -41,16 +41,24 @@ def get_db():
         db.close()
 
 
+def format_user(u: User):
+    return {
+        "id": u.id,
+        "username": u.username,
+        "email": u.email,
+        "full_name": u.full_name,
+        "phone": u.phone,
+        "role": u.role.value,
+        "is_active": u.is_active,
+    }
+
+
 @app.get("/")
 def index():
     index_file = WEB_DIR / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
-    return {
-        "message": "Il Tuo Allenatore API online",
-        "docs": "/docs",
-        "web": "Interfaccia non disponibile",
-    }
+    return {"message": "Il Tuo Allenatore API online", "docs": "/docs", "web": "Interfaccia non disponibile"}
 
 
 @app.get("/api/status")
@@ -60,29 +68,34 @@ def root(db: Session = Depends(get_db)):
         db.execute(text("SELECT 1"))
     except Exception:
         db_ok = False
-    return {
-        "message": "Il Tuo Allenatore API online",
-        "docs": "/docs",
-        "db_connected": db_ok,
-    }
+    return {"message": "Il Tuo Allenatore API online", "docs": "/docs", "db_connected": db_ok}
 
 
 @app.get("/users")
 def list_users(db: Session = Depends(get_db)):
     users = db.scalars(select(User).order_by(User.created_at.asc())).all()
-    return [{"id": u.id, "username": u.username, "role": u.role.value} for u in users]
+    return [format_user(u) for u in users]
 
 
 @app.post("/users")
 def create_user(payload: UserCreate, db: Session = Depends(get_db)):
-    existing = db.scalar(select(User).where(User.username == payload.username))
-    if existing:
+    if db.scalar(select(User).where(User.username == payload.username)):
         raise HTTPException(status_code=400, detail="username già esistente")
-    user = User(username=payload.username, role=Role(payload.role))
+    if db.scalar(select(User).where(User.email == payload.email.lower())):
+        raise HTTPException(status_code=400, detail="email già esistente")
+
+    user = User(
+        username=payload.username,
+        email=payload.email.lower(),
+        password_hash=hash_password(payload.password),
+        full_name=payload.full_name,
+        phone=payload.phone,
+        role=Role(payload.role),
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {"id": user.id, "username": user.username, "role": user.role.value}
+    return format_user(user)
 
 
 @app.put("/users/{user_id}")
@@ -90,15 +103,19 @@ def update_user(user_id: int, payload: UserCreate, db: Session = Depends(get_db)
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="user non trovato")
-
-    existing = db.scalar(select(User).where(User.username == payload.username, User.id != user_id))
-    if existing:
+    if db.scalar(select(User).where(User.username == payload.username, User.id != user_id)):
         raise HTTPException(status_code=400, detail="username già esistente")
+    if db.scalar(select(User).where(User.email == payload.email.lower(), User.id != user_id)):
+        raise HTTPException(status_code=400, detail="email già esistente")
 
     user.username = payload.username
+    user.email = payload.email.lower()
+    user.password_hash = hash_password(payload.password)
+    user.full_name = payload.full_name
+    user.phone = payload.phone
     user.role = Role(payload.role)
     db.commit()
-    return {"id": user.id, "username": user.username, "role": user.role.value}
+    return format_user(user)
 
 
 @app.delete("/users/{user_id}")
@@ -116,15 +133,16 @@ def list_athletes(db: Session = Depends(get_db)):
     athletes = db.scalars(select(AthleteProfile).options(joinedload(AthleteProfile.user)).order_by(AthleteProfile.id.asc())).all()
     return [
         {
-            "id": athlete.id,
-            "user_id": athlete.user_id,
-            "first_name": athlete.first_name,
-            "last_name": athlete.last_name,
-            "birth_date": athlete.birth_date,
-            "gender": athlete.gender,
-            "username": athlete.user.username,
+            "id": a.id,
+            "user_id": a.user_id,
+            "first_name": a.first_name,
+            "last_name": a.last_name,
+            "birth_date": a.birth_date,
+            "gender": a.gender,
+            "username": a.user.username,
+            "email": a.user.email,
         }
-        for athlete in athletes
+        for a in athletes
     ]
 
 
@@ -148,7 +166,6 @@ def update_athlete(athlete_id: int, payload: AthleteCreate, db: Session = Depend
     user = db.get(User, payload.user_id)
     if not user or user.role != Role.athlete:
         raise HTTPException(status_code=400, detail="user atleta non valido")
-
     for key, value in payload.model_dump().items():
         setattr(athlete, key, value)
     db.commit()
@@ -165,18 +182,7 @@ def delete_athlete(athlete_id: int, db: Session = Depends(get_db)):
     return {"deleted": True}
 
 
-SNAPSHOT_FIELDS = [
-    "ftp",
-    "cp_2m",
-    "cp_5m",
-    "cp_20m",
-    "vo2max",
-    "p_vo2max",
-    "weight",
-    "height",
-    "lean_mass",
-    "muscle_mass",
-]
+SNAPSHOT_FIELDS = ["ftp", "cp_2m", "cp_5m", "cp_20m", "vo2max", "p_vo2max", "weight", "height", "lean_mass", "muscle_mass"]
 
 
 @app.post("/athletes/{athlete_id}/snapshots")
@@ -185,12 +191,7 @@ def add_snapshot(athlete_id: int, payload: SnapshotIn, db: Session = Depends(get
     if not athlete:
         raise HTTPException(status_code=404, detail="atleta non trovato")
 
-    previous = db.scalar(
-        select(AthleteSnapshot)
-        .where(AthleteSnapshot.athlete_id == athlete_id)
-        .order_by(AthleteSnapshot.ref_date.desc())
-    )
-
+    previous = db.scalar(select(AthleteSnapshot).where(AthleteSnapshot.athlete_id == athlete_id).order_by(AthleteSnapshot.ref_date.desc()))
     values = payload.model_dump(exclude={"zones"})
     for field in SNAPSHOT_FIELDS:
         if values[field] is None:
@@ -204,16 +205,7 @@ def add_snapshot(athlete_id: int, payload: SnapshotIn, db: Session = Depends(get
 
     zone_payload = payload.zones
     if zone_payload is None and previous:
-        zone_payload = [
-            {
-                "zone": z.zone,
-                "watt_min": z.watt_min,
-                "watt_max": z.watt_max,
-                "hr_min": z.hr_min,
-                "hr_max": z.hr_max,
-            }
-            for z in previous.zones
-        ]
+        zone_payload = [{"zone": z.zone, "watt_min": z.watt_min, "watt_max": z.watt_max, "hr_min": z.hr_min, "hr_max": z.hr_max} for z in previous.zones]
     if zone_payload is None:
         raise HTTPException(status_code=400, detail="servono le zone al primo inserimento")
 
@@ -227,9 +219,7 @@ def add_snapshot(athlete_id: int, payload: SnapshotIn, db: Session = Depends(get
 
 @app.get("/athletes/{athlete_id}/snapshots")
 def list_snapshots(athlete_id: int, db: Session = Depends(get_db)):
-    snapshots = db.scalars(
-        select(AthleteSnapshot).options(joinedload(AthleteSnapshot.zones)).where(AthleteSnapshot.athlete_id == athlete_id).order_by(AthleteSnapshot.ref_date.desc())
-    ).unique().all()
+    snapshots = db.scalars(select(AthleteSnapshot).options(joinedload(AthleteSnapshot.zones)).where(AthleteSnapshot.athlete_id == athlete_id).order_by(AthleteSnapshot.ref_date.desc())).unique().all()
     return [
         {
             "id": s.id,
@@ -237,18 +227,31 @@ def list_snapshots(athlete_id: int, db: Session = Depends(get_db)):
             "ref_date": s.ref_date,
             **{field: getattr(s, field) for field in SNAPSHOT_FIELDS},
             "zones": [
-                {
-                    "zone": z.zone,
-                    "watt_min": z.watt_min,
-                    "watt_max": z.watt_max,
-                    "hr_min": z.hr_min,
-                    "hr_max": z.hr_max,
-                }
+                {"zone": z.zone, "watt_min": z.watt_min, "watt_max": z.watt_max, "hr_min": z.hr_min, "hr_max": z.hr_max}
                 for z in sorted(s.zones, key=lambda item: item.zone)
             ],
         }
         for s in snapshots
     ]
+
+
+@app.get("/athletes/{athlete_id}/dashboard")
+def athlete_dashboard(athlete_id: int, db: Session = Depends(get_db)):
+    athlete = db.scalar(select(AthleteProfile).options(joinedload(AthleteProfile.user)).where(AthleteProfile.id == athlete_id))
+    if not athlete:
+        raise HTTPException(status_code=404, detail="atleta non trovato")
+    snapshots = list_snapshots(athlete_id, db)
+    plans = [p for p in list_plans(db) if p["athlete_id"] == athlete_id]
+    return {
+        "athlete": {
+            "id": athlete.id,
+            "name": f"{athlete.first_name} {athlete.last_name}",
+            "email": athlete.user.email,
+            "birth_date": athlete.birth_date,
+        },
+        "snapshots": snapshots,
+        "plans": plans,
+    }
 
 
 @app.delete("/snapshots/{snapshot_id}")
@@ -259,18 +262,6 @@ def delete_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
     db.delete(snapshot)
     db.commit()
     return {"deleted": True}
-
-
-@app.get("/athletes/{athlete_id}/progress/{field_name}")
-def get_progress(athlete_id: int, field_name: str, db: Session = Depends(get_db)):
-    if field_name not in SNAPSHOT_FIELDS:
-        raise HTTPException(status_code=400, detail="campo non supportato")
-    snapshots = db.scalars(
-        select(AthleteSnapshot)
-        .where(AthleteSnapshot.athlete_id == athlete_id)
-        .order_by(AthleteSnapshot.ref_date.asc())
-    ).all()
-    return [{"date": s.ref_date, "value": getattr(s, field_name)} for s in snapshots]
 
 
 @app.get("/goals")
@@ -311,11 +302,7 @@ def delete_goal(goal_id: int, db: Session = Depends(get_db)):
 
 @app.get("/methods")
 def list_methods(db: Session = Depends(get_db)):
-    methods = db.scalars(
-        select(TrainingMethod)
-        .options(joinedload(TrainingMethod.goals), joinedload(TrainingMethod.steps))
-        .order_by(TrainingMethod.name.asc())
-    ).unique().all()
+    methods = db.scalars(select(TrainingMethod).options(joinedload(TrainingMethod.goals), joinedload(TrainingMethod.steps)).order_by(TrainingMethod.name.asc())).unique().all()
     return [
         {
             "id": m.id,
@@ -326,6 +313,7 @@ def list_methods(db: Session = Depends(get_db)):
             "steps": [
                 {
                     "id": s.id,
+                    "week_num": s.week_num,
                     "order_num": s.order_num,
                     "reps": s.reps,
                     "duration_sec": s.duration_sec,
@@ -333,7 +321,7 @@ def list_methods(db: Session = Depends(get_db)):
                     "recovery_sec": s.recovery_sec,
                     "notes": s.notes,
                 }
-                for s in sorted(m.steps, key=lambda step: step.order_num)
+                for s in sorted(m.steps, key=lambda step: (step.week_num, step.order_num))
             ],
         }
         for m in methods
@@ -343,7 +331,6 @@ def list_methods(db: Session = Depends(get_db)):
 @app.post("/methods")
 def create_method(payload: MethodIn, db: Session = Depends(get_db)):
     goals = db.scalars(select(TrainingGoal).where(TrainingGoal.id.in_(payload.goal_ids))).all() if payload.goal_ids else []
-
     method = TrainingMethod(name=payload.name, description=payload.description, goals=goals)
     db.add(method)
     db.flush()
@@ -396,11 +383,7 @@ def delete_method(method_id: int, db: Session = Depends(get_db)):
 
 @app.get("/plans")
 def list_plans(db: Session = Depends(get_db)):
-    plans = db.scalars(
-        select(TrainingPlan)
-        .options(joinedload(TrainingPlan.workouts))
-        .order_by(TrainingPlan.id.desc())
-    ).unique().all()
+    plans = db.scalars(select(TrainingPlan).options(joinedload(TrainingPlan.workouts)).order_by(TrainingPlan.id.desc())).unique().all()
     return [
         {
             "id": p.id,
@@ -416,7 +399,9 @@ def list_plans(db: Session = Depends(get_db)):
                     "week_num": w.week_num,
                     "week_type": w.week_type,
                     "day_name": w.day_name,
-                    "method_id": w.method_id,
+                    "day_goal": w.day_goal,
+                    "planned_hours": w.planned_hours,
+                    "method_ids": w.method_ids,
                 }
                 for w in sorted(p.workouts, key=lambda workout: (workout.week_num, workout.day_name))
             ],
@@ -440,14 +425,25 @@ def create_plan(payload: PlanIn, db: Session = Depends(get_db)):
     db.add(plan)
     db.flush()
 
-    methods = db.scalars(select(TrainingMethod).where(TrainingMethod.id.in_(payload.preferred_method_ids))).all()
     for week in range(1, weeks + 1):
         kind = week_type(week)
-        for idx, day in enumerate(payload.available_days):
-            method = methods[(week + idx) % len(methods)] if methods else None
-            if kind == "deload" and idx > 1:
-                method = None
-            db.add(PlanWorkout(plan_id=plan.id, week_num=week, week_type=kind, day_name=day, method_id=method.id if method else None))
+        for day in payload.available_days:
+            template = next((d for d in payload.day_templates if d.day_name == day), None)
+            selected_methods = template.selected_method_ids if template else []
+            planned_hours = template.planned_hours if template else round(payload.weekly_hours / max(len(payload.available_days), 1), 2)
+            if kind == "deload":
+                planned_hours = round(planned_hours * 0.7, 2)
+            db.add(
+                PlanWorkout(
+                    plan_id=plan.id,
+                    week_num=week,
+                    week_type=kind,
+                    day_name=day,
+                    day_goal=template.day_goal if template else None,
+                    planned_hours=planned_hours,
+                    method_ids=selected_methods,
+                )
+            )
 
     db.commit()
     return {"plan_id": plan.id, "weeks": weeks}
