@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from .models import TrainingMethodStep
 
 ZONE_FACTOR = {
@@ -23,3 +25,7 @@ def compute_stress(steps: list[TrainingMethodStep]) -> float:
 
 def week_type(week_num: int) -> str:
     return "deload" if week_num % 4 == 0 else "load"
+
+
+def hash_password(raw_password: str) -> str:
+    return hashlib.sha256(raw_password.encode("utf-8")).hexdigest()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from enum import Enum
 
-from sqlalchemy import JSON, Date, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -19,7 +19,12 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
 
     athlete_profile: Mapped[AthleteProfile | None] = relationship(back_populates="user", uselist=False)
@@ -108,6 +113,7 @@ class TrainingMethodStep(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     method_id: Mapped[int] = mapped_column(ForeignKey("training_methods.id"), index=True)
+    week_num: Mapped[int] = mapped_column(Integer, default=1)
     order_num: Mapped[int] = mapped_column(Integer)
     reps: Mapped[int] = mapped_column(Integer, default=1)
     duration_sec: Mapped[int] = mapped_column(Integer)
@@ -141,6 +147,8 @@ class PlanWorkout(Base):
     week_num: Mapped[int] = mapped_column(Integer)
     week_type: Mapped[str] = mapped_column(String(20))
     day_name: Mapped[str] = mapped_column(String(20))
-    method_id: Mapped[int | None] = mapped_column(ForeignKey("training_methods.id"), nullable=True)
+    day_goal: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    planned_hours: Mapped[float] = mapped_column(Float, default=1)
+    method_ids: Mapped[list[int]] = mapped_column(JSON, default=[])
 
     plan: Mapped[TrainingPlan] = relationship(back_populates="workouts")
