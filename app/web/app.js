@@ -19,8 +19,15 @@ function App() {
 
   async function api(path, options = {}) {
     const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
-    if (!res.ok) throw new Error((await res.json()).detail || "Errore API");
-    return res.status === 204 ? null : res.json();
+    const contentType = res.headers.get("content-type") || "";
+    const isJson = contentType.includes("application/json");
+    const body = res.status === 204 ? null : (isJson ? await res.json() : await res.text());
+
+    if (!res.ok) {
+      const detail = isJson ? (body?.detail || body?.message) : body;
+      throw new Error(detail || `Errore API (${res.status})`);
+    }
+    return body;
   }
 
   async function reload() {
