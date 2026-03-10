@@ -6,3 +6,5 @@ out/
 coverage/
 .DS_Store
 npm-debug.log*
+prisma/dev.db
+prisma/dev.db-journal

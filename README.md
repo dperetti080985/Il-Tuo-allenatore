@@ -5,7 +5,7 @@ Piattaforma web MVP per coach sportivi e atleti costruita con:
 - Next.js (App Router)
 - TypeScript
 - Tailwind CSS
-- PostgreSQL
+- SQLite
 - Prisma ORM
 - Autenticazione custom con ruoli (`COACH`, `ATHLETE`)
 
@@ -36,7 +36,7 @@ prisma/
 npm install
 cp .env.example .env
 npx prisma generate
-npx prisma migrate dev --name init
+npx prisma migrate dev --name init-sqlite
 npm run prisma:seed
 npm run dev
 ```
