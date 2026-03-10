@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 
 from fastapi import Depends, FastAPI, HTTPException
-from sqlalchemy import select
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine
@@ -32,6 +32,20 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@app.get("/")
+def root(db: Session = Depends(get_db)):
+    db_ok = True
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = False
+    return {
+        "message": "Il Tuo Allenatore API online",
+        "docs": "/docs",
+        "db_connected": db_ok,
+    }
 
 
 @app.post("/users")
