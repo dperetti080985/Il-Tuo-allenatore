@@ -44,9 +44,7 @@ function App() {
       const data = await api("/auth/login", { method: "POST", body: JSON.stringify(loginForm) });
       setSessionUser(data.user);
       setMessage(`Benvenuto ${data.user.username}`);
-      if (data.user.role === "coach") {
-        await reloadCoachData();
-      }
+      await reloadCoachData();
     } catch (err) {
       setMessage(err.message);
     }
@@ -122,9 +120,14 @@ function App() {
         <h3>Inserimento utenti</h3>
         <form className="stack" onSubmit={async (e) => {
           e.preventDefault();
-          await api("/users", { method: "POST", body: JSON.stringify(userForm) });
-          setUserForm({ username: "", email: "", password: "", full_name: "", phone: "", role: "athlete" });
-          await reloadCoachData();
+          try {
+            await api("/users", { method: "POST", body: JSON.stringify(userForm) });
+            setUserForm({ username: "", email: "", password: "", full_name: "", phone: "", role: "athlete" });
+            await reloadCoachData();
+            setMessage("Utente creato correttamente");
+          } catch (err) {
+            setMessage(err.message);
+          }
         }}>
           <input required placeholder="username" value={userForm.username} onChange={(e) => setUserForm({ ...userForm, username: e.target.value })} />
           <input required type="email" placeholder="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} />

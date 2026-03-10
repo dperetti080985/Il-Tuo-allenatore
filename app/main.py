@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from .database import Base, SessionLocal, engine
@@ -47,17 +48,24 @@ def ensure_default_admin(db: Session):
     admin = db.scalar(select(User).where(User.username == "admin"))
     if admin:
         return
+
+    existing_email = db.scalar(select(User).where(User.email == "admin@iltuoallenatore.local"))
+    admin_email = "admin@iltuoallenatore.local" if existing_email is None else "admin+coach@iltuoallenatore.local"
+
     db.add(
         User(
             username="admin",
-            email="admin@iltuoallenatore.local",
+            email=admin_email,
             password_hash=hash_password("admin"),
             full_name="Admin",
             role=Role.coach,
             is_active=True,
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
 
 
 def format_user(u: User):
@@ -133,13 +141,18 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     if db.scalar(select(User).where(User.email == payload.email.lower())):
         raise HTTPException(status_code=400, detail="email già esistente")
 
+    try:
+        role = Role(payload.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="ruolo non valido") from exc
+
     user = User(
         username=payload.username,
         email=payload.email.lower(),
         password_hash=hash_password(payload.password),
         full_name=payload.full_name,
         phone=payload.phone,
-        role=Role(payload.role),
+        role=role,
     )
     db.add(user)
     db.commit()
@@ -157,12 +170,17 @@ def update_user(user_id: int, payload: UserCreate, db: Session = Depends(get_db)
     if db.scalar(select(User).where(User.email == payload.email.lower(), User.id != user_id)):
         raise HTTPException(status_code=400, detail="email già esistente")
 
+    try:
+        role = Role(payload.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="ruolo non valido") from exc
+
     user.username = payload.username
     user.email = payload.email.lower()
     user.password_hash = hash_password(payload.password)
     user.full_name = payload.full_name
     user.phone = payload.phone
-    user.role = Role(payload.role)
+    user.role = role
     db.commit()
     return format_user(user)
 
