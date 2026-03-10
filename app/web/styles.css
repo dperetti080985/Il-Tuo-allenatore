@@ -1,0 +1,37 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: #14213d;
+  background: #f4f8ff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.shell { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+header h1 { margin-bottom: 0.25rem; }
+.switcher { display: flex; gap: 0.5rem; margin: 1rem 0; }
+button { border: 1px solid #c4d4f0; background: #fff; padding: 0.6rem 0.9rem; border-radius: 10px; cursor: pointer; }
+button.active, .chip.active, .primary { background: #2057ff; color: #fff; border-color: #2057ff; }
+.message { background: #dbeafe; padding: 0.75rem; border-radius: 10px; margin-bottom: 1rem; }
+select, input, textarea { width: 100%; padding: 0.65rem; border: 1px solid #c4d4f0; border-radius: 10px; margin-top: 0.25rem; }
+label { font-weight: 600; display: block; margin-bottom: 0.75rem; }
+
+.athlete-view { display: flex; flex-direction: column; gap: 0.8rem; }
+.plan-card { background: #fff; border-radius: 14px; padding: 0.9rem; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+.calendar { display: grid; gap: 0.5rem; }
+.workout { display: grid; grid-template-columns: 1fr auto; gap: 0.3rem; background: #fff; border-radius: 12px; padding: 0.7rem; }
+.workout small { grid-column: 1 / -1; color: #4b5563; }
+.load { color: #0f766e; font-weight: 700; }
+.deload { color: #be123c; font-weight: 700; }
+
+.coach-view form { background: #fff; border-radius: 16px; padding: 1rem; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+.grid { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 0.8rem; }
+.chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.chip { font-size: 0.9rem; }
+.primary { width: 100%; margin-top: 0.8rem; }
+
+@media (min-width: 900px) {
+  .shell { padding: 1.5rem 2rem; }
+  .athlete-view { max-width: 460px; }
+  .coach-view { max-width: 100%; }
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .primary { width: auto; min-width: 220px; }
+}

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
-from sqlalchemy import text, select
-from sqlalchemy.orm import Session
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session, joinedload
 
 from .database import Base, SessionLocal, engine
 from .models import (
@@ -25,6 +28,10 @@ from .services import compute_stress, week_type
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Il Tuo Allenatore API")
 
+WEB_DIR = Path(__file__).parent / "web"
+if WEB_DIR.exists():
+    app.mount("/web", StaticFiles(directory=WEB_DIR), name="web")
+
 
 def get_db():
     db = SessionLocal()
@@ -35,6 +42,18 @@ def get_db():
 
 
 @app.get("/")
+def index():
+    index_file = WEB_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return {
+        "message": "Il Tuo Allenatore API online",
+        "docs": "/docs",
+        "web": "Interfaccia non disponibile",
+    }
+
+
+@app.get("/api/status")
 def root(db: Session = Depends(get_db)):
     db_ok = True
     try:
@@ -48,6 +67,12 @@ def root(db: Session = Depends(get_db)):
     }
 
 
+@app.get("/users")
+def list_users(db: Session = Depends(get_db)):
+    users = db.scalars(select(User).order_by(User.created_at.asc())).all()
+    return [{"id": u.id, "username": u.username, "role": u.role.value} for u in users]
+
+
 @app.post("/users")
 def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     existing = db.scalar(select(User).where(User.username == payload.username))
@@ -58,6 +83,23 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     return {"id": user.id, "username": user.username, "role": user.role.value}
+
+
+@app.get("/athletes")
+def list_athletes(db: Session = Depends(get_db)):
+    athletes = db.scalars(select(AthleteProfile).options(joinedload(AthleteProfile.user)).order_by(AthleteProfile.id.asc())).all()
+    return [
+        {
+            "id": athlete.id,
+            "user_id": athlete.user_id,
+            "first_name": athlete.first_name,
+            "last_name": athlete.last_name,
+            "birth_date": athlete.birth_date,
+            "gender": athlete.gender,
+            "username": athlete.user.username,
+        }
+        for athlete in athletes
+    ]
 
 
 @app.post("/athletes")
@@ -144,6 +186,12 @@ def get_progress(athlete_id: int, field_name: str, db: Session = Depends(get_db)
     return [{"date": s.ref_date, "value": getattr(s, field_name)} for s in snapshots]
 
 
+@app.get("/goals")
+def list_goals(db: Session = Depends(get_db)):
+    goals = db.scalars(select(TrainingGoal).order_by(TrainingGoal.name.asc())).all()
+    return [{"id": g.id, "name": g.name, "description": g.description} for g in goals]
+
+
 @app.post("/goals")
 def create_goal(payload: GoalIn, db: Session = Depends(get_db)):
     goal = TrainingGoal(**payload.model_dump())
@@ -151,6 +199,36 @@ def create_goal(payload: GoalIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(goal)
     return {"goal_id": goal.id}
+
+
+@app.get("/methods")
+def list_methods(db: Session = Depends(get_db)):
+    methods = db.scalars(
+        select(TrainingMethod)
+        .options(joinedload(TrainingMethod.goals), joinedload(TrainingMethod.steps))
+        .order_by(TrainingMethod.name.asc())
+    ).unique().all()
+    return [
+        {
+            "id": m.id,
+            "name": m.name,
+            "description": m.description,
+            "stress_score": m.stress_score,
+            "goal_ids": [g.id for g in m.goals],
+            "steps": [
+                {
+                    "order_num": s.order_num,
+                    "reps": s.reps,
+                    "duration_sec": s.duration_sec,
+                    "zone": s.zone,
+                    "recovery_sec": s.recovery_sec,
+                    "notes": s.notes,
+                }
+                for s in sorted(m.steps, key=lambda step: step.order_num)
+            ],
+        }
+        for m in methods
+    ]
 
 
 @app.post("/methods")
@@ -171,6 +249,37 @@ def create_method(payload: MethodIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(method)
     return {"method_id": method.id, "stress_score": method.stress_score}
+
+
+@app.get("/plans")
+def list_plans(db: Session = Depends(get_db)):
+    plans = db.scalars(
+        select(TrainingPlan)
+        .options(joinedload(TrainingPlan.workouts))
+        .order_by(TrainingPlan.id.desc())
+    ).unique().all()
+    return [
+        {
+            "id": p.id,
+            "athlete_id": p.athlete_id,
+            "start_date": p.start_date,
+            "weeks": p.weeks,
+            "weekly_hours": p.weekly_hours,
+            "available_days": p.available_days,
+            "race_model": p.race_model,
+            "main_goals": p.main_goals,
+            "workouts": [
+                {
+                    "week_num": w.week_num,
+                    "week_type": w.week_type,
+                    "day_name": w.day_name,
+                    "method_id": w.method_id,
+                }
+                for w in sorted(p.workouts, key=lambda workout: (workout.week_num, workout.day_name))
+            ],
+        }
+        for p in plans
+    ]
 
 
 @app.post("/plans")
