@@ -1,4 +1,8 @@
-__pycache__/
-*.pyc
-.venv/
-coach.db
+node_modules/
+.next/
+out/
+.env
+.env.local
+coverage/
+.DS_Store
+npm-debug.log*
