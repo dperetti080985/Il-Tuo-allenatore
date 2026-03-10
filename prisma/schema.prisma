@@ -7,23 +7,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  COACH
-  ATHLETE
-}
-
-enum WorkoutStatus {
-  DRAFT
-  PUBLISHED
-}
-
 model User {
   id             String          @id @default(cuid())
   email          String          @unique
   passwordHash   String
   firstName      String
   lastName       String
-  role           UserRole
+  role           String          @default("ATHLETE") // COACH | ATHLETE
   coachProfile   CoachProfile?
   athleteProfile AthleteProfile?
   createdAt      DateTime        @default(now())
@@ -56,7 +46,7 @@ model Workout {
   coach       CoachProfile        @relation(fields: [coachId], references: [id], onDelete: Cascade)
   title       String
   description String?
-  status      WorkoutStatus       @default(DRAFT)
+  status      String              @default("DRAFT") // DRAFT | PUBLISHED
   blocks      WorkoutBlock[]
   assignments WorkoutAssignment[]
   createdAt   DateTime            @default(now())
@@ -64,13 +54,13 @@ model Workout {
 }
 
 model WorkoutBlock {
-  id          String   @id @default(cuid())
-  workoutId   String
-  workout     Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
-  title       String
+  id           String  @id @default(cuid())
+  workoutId    String
+  workout      Workout @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  title        String
   instructions String
-  order       Int
-  durationMin Int?
+  order        Int
+  durationMin  Int?
 }
 
 model WorkoutAssignment {

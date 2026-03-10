@@ -41,6 +41,13 @@ npm run prisma:seed
 npm run dev
 ```
 
+
+## Note SQLite + Prisma
+
+Con SQLite, Prisma non supporta `enum` nativi nel file schema. In questo progetto i campi sono modellati come stringhe:
+- `User.role`: `COACH` | `ATHLETE`
+- `Workout.status`: `DRAFT` | `PUBLISHED`
+
 ## Credenziali seed
 
 - Coach: `coach@demo.it` / `coach123`
